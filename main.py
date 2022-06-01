@@ -17,11 +17,11 @@ class VkDownloader:
             raise Exception('yandex token or google token should be entered.')
         self.profile_id = profile_id
         self.data_file = {'photos': []}  # future .json file
-        self.ya_token = str(ya_token)
-        self.google_token = str(google_token)
+        self.ya_token = ya_token
+        self.google_token = google_token
 
         with open('vk_token.txt', 'r') as token:
-            self.vk_token = str(token.read())  # gets token from the file 'vk_token.txt'
+            self.vk_token = token.readline().strip()  # gets token from the file 'vk_token.txt'
         self.respond = None
 
     def upload_profile_photos_to_cloud_storage(self, number_of_photos=5, folder='vk_profile_photos'):
@@ -96,7 +96,7 @@ class VkDownloader:
                      headers={'Content-Type': 'application/json',
                               'Authorization': f'OAuth {self.ya_token}'},
                      params={'path': f'/{path}'})  # creates the folder on yandex drive
-        time.sleep(0.33)
+        time.sleep(0.5)
 
     def _create_google_folder(self, path):
         """
@@ -114,7 +114,7 @@ class VkDownloader:
                                 headers={'Authorization': 'Bearer ' + self.google_token,
                                          'Content-Type': 'application/json'},
                                 data=json.dumps(metadata))  # creates the folder on google drive
-        time.sleep(0.33)
+        time.sleep(0.5)
         return respond.json()['id'], respond.json()['name']
 
     def _uploading_to_yandex(self, same_likes, path, bar):
@@ -143,7 +143,7 @@ class VkDownloader:
                                    'Authorization': f'OAuth {self.ya_token}'},
                           params={'path': f'/{path}/{file_name}', 'url': url})  # uploads photos
             bar.next()
-            time.sleep(0.33)
+            time.sleep(0.5)
 
     def _uploading_to_google(self, same_likes, path, bar):
         """
@@ -175,7 +175,7 @@ class VkDownloader:
                                  "file": requests.get(url).content})  # uploads photos
 
             bar.next()
-            time.sleep(0.33)
+            time.sleep(0.5)
 
     def _uploading(self, number_of_photos, folder_name):
         """
@@ -192,9 +192,9 @@ class VkDownloader:
 
         bar = IncrementalBar('Photos_uploading...', max=bar_number)  # sets the progress bar
 
-        if self.ya_token != 'None':
+        if self.ya_token is not None:
             self._uploading_to_yandex(same_likes, folder_name, bar)
-        if self.google_token != 'None':
+        if self.google_token is not None:
             self._uploading_to_google(same_likes, folder_name, bar)
 
         with open(f'{folder_name}.json', 'w') as new_file:
@@ -218,10 +218,10 @@ class OkDownloader(VkDownloader):
         self.data_file = {'photos': []}  # future json file
         with open('ok_token.txt', 'r') as token:
             # These next 4 lines should be in exact order in the 'ok_token.txt' !
-            self.ok_app_id = str(token.readline()).strip()              # Application ID
-            self.ok_app_key = str(token.readline()).strip()             # Application public key
-            self.ok_access_token = str(token.readline()).strip()        # Access token
-            self.ok_secret_session_key = str(token.readline()).strip()  # Secret session key
+            self.ok_app_id = token.readline().strip()  # Application ID
+            self.ok_app_key = token.readline().strip()  # Application public key
+            self.ok_access_token = token.readline().strip()  # Access token
+            self.ok_secret_session_key = token.readline().strip()  # Secret session key
         self.respond = None
         self.data_file = {'photos': []}
 
@@ -235,7 +235,8 @@ class OkDownloader(VkDownloader):
         sig_params = [f'application_id={self.ok_app_id}',
                       f'application_key={self.ok_app_key}',
                       f'fid={self.profile_id}',
-                      f'count={number_of_photos}'
+                      f'count={number_of_photos}',
+                      f'fields=photo.created_ms, photo.like_count, photo.pic_max, photo.crop_size'
                       ]
 
         sig = md5((''.join(sorted(sig_params)) + self.ok_secret_session_key).encode())
@@ -246,7 +247,8 @@ class OkDownloader(VkDownloader):
             'access_token': f'{self.ok_access_token}',
             'sig': str(sig),
             'fid': f'{self.profile_id}',
-            'count': f'{number_of_photos}'
+            'count': f'{number_of_photos}',
+            'fields': 'photo.created_ms, photo.like_count, photo.pic_max, photo.crop_size'
         }
 
         self.respond = requests.get('https://api.ok.ru/api/photos/getPhotos', params=param)
@@ -256,6 +258,7 @@ class OkDownloader(VkDownloader):
                       f'application_key={self.ok_app_key}',
                       f'aid={album_id}',
                       f'count={number_of_photos}'
+                      f'fields=photo.created_ms, photo.like_count, photo.pic_max, photo.crop_size'
                       ]
 
         sig = md5((''.join(sorted(sig_params)) + self.ok_secret_session_key).encode())
@@ -266,10 +269,18 @@ class OkDownloader(VkDownloader):
             'access_token': f'{self.ok_access_token}',
             'sig': str(sig),
             'aid': f'{album_id}',
-            'count': f'{number_of_photos}'
+            'count': f'{number_of_photos}',
+            'fields': 'photo.created_ms, photo.like_count, photo.pic_max, photo.crop_size'
         }
 
         self.respond = requests.get('https://api.ok.ru/api/photos/getPhotos', params=param)
+
+    def _same_likes_list(self):
+        """
+        :return: list of 'likes' that occur more than once
+        """
+        likes_list = Counter([likes['like_count'] for likes in self.respond.json()['photos']])
+        return list(filter(lambda x: likes_list[x] > 1, likes_list))
 
     def _bar_number(self, number_of_photos):
         """
@@ -280,7 +291,7 @@ class OkDownloader(VkDownloader):
         else:
             return number_of_photos
 
-    def _uploading_to_yandex(self, path, bar):
+    def _uploading_to_yandex(self, same_likes, path, bar):
         """
         Uploads photos to yandex drive.
         :param path: folder_name on yandex drive where photos will be uploaded
@@ -291,9 +302,12 @@ class OkDownloader(VkDownloader):
         self._create_yandex_folder(path)
 
         for photo in self.respond.json()['photos']:
-            url = photo['pic640x480']
-            size = 'pic640x480'
-            file_name = f"{photo['id']}.jpg"
+            url = photo['pic_max']
+            size = 'pic_max'
+            if photo['like_count'] in same_likes:  # checks if a date needs to be added to the name
+                file_name = f"{photo['like_count']} - {time.strftime('%d.%b.%Y', time.gmtime(photo['created_ms']/1000))}.jpg"
+            else:
+                file_name = f"{photo['like_count']}.jpg"
 
             self.data_file['photos'].append({'file_name': file_name, 'size': size})
 
@@ -302,9 +316,9 @@ class OkDownloader(VkDownloader):
                                    'Authorization': f'OAuth {self.ya_token}'},
                           params={'path': f'/{path}/{file_name}', 'url': url})  # uploads photos
             bar.next()
-            time.sleep(0.33)
+            time.sleep(0.5)
 
-    def _uploading_to_google(self, path, bar):
+    def _uploading_to_google(self, same_likes, path, bar):
         """
         Uploads photos to google drive.
         :param path: folder_id on google drive where photos will be uploaded
@@ -315,9 +329,12 @@ class OkDownloader(VkDownloader):
         folder_id, folder_name = self._create_google_folder(path)
 
         for photo in self.respond.json()['photos']:
-            url = photo['pic640x480']
-            size = 'pic640x480'
-            file_name = f"{photo['id']}.jpg"
+            url = photo['pic_max']
+            size = 'pic_max'
+            if photo['like_count'] in same_likes:  # checks if a date needs to be added to the name
+                file_name = f"{photo['like_count']} - {time.strftime('%d.%b.%Y', time.gmtime(photo['created_ms']/1000))}.jpg"
+            else:
+                file_name = f"{photo['like_count']}.jpg"
 
             self.data_file['photos'].append({'file_name': file_name, 'size': size})
 
@@ -330,46 +347,20 @@ class OkDownloader(VkDownloader):
                                  "file": requests.get(url).content})  # uploads photos
 
             bar.next()
-            time.sleep(0.33)
-
-    def _uploading(self, number_of_photos, folder_name):
-        """
-        1. Chooses if the program should upload pictures to yandex or google drive.
-        2. Creates a .json data file with pictures' information.
-        """
-
-        bar_number = self._bar_number(number_of_photos)
-
-        if self.ya_token != 'None' != self.google_token:
-            bar_number *= 2
-
-        bar = IncrementalBar('Photos_uploading...', max=bar_number)  # sets the progress bar
-
-        if self.ya_token != 'None':
-            self._uploading_to_yandex(folder_name, bar)
-        if self.google_token != 'None':
-            self._uploading_to_google(folder_name, bar)
-
-        with open(f'{folder_name}.json', 'w') as new_file:
-            json.dump(self.data_file, new_file, ensure_ascii=False, indent=4)  # creates the .json data
-
-        bar.finish()
-        print('Success!')
+            time.sleep(0.5)
 
 
 if __name__ == '__main__':
-    vk_id = int(input('input id'))
-    download = VkDownloader(vk_id, ya_token='', google_token='')
+    user_id = int(input('User_id: '))
+    download = VkDownloader(user_id, ya_token=None, google_token=None)
 
-    download.upload_profile_photos_to_cloud_storage(5)
+    download.upload_profile_photos_to_cloud_storage()
+    album_id = int(input('Album_id: '))
+    download.upload_album_photos_to_cloud_storage(album_id)
 
-    vk_album_id = int(input('input album_id'))
-    download.upload_album_photos_to_cloud_storage(vk_album_id)
+    user_id = int(input('User_id: '))
+    download = OkDownloader(user_id, ya_token=None, google_token=None)
 
-    ok_id = int(input('input id'))
-    download = OkDownloader(ok_id, ya_token='', google_token='')
-
-    download.upload_profile_photos_to_cloud_storage(5)
-
-    ok_album_id = int(input('input album_id'))
-    download.upload_album_photos_to_cloud_storage(ok_album_id)
+    download.upload_profile_photos_to_cloud_storage()
+    album_id = int(input('Album_id: '))
+    download.upload_album_photos_to_cloud_storage(album_id)
