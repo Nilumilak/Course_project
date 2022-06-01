@@ -187,7 +187,7 @@ class VkDownloader:
 
         bar_number = self._bar_number(number_of_photos)
 
-        if self.ya_token != 'None' != self.google_token:
+        if all([self.ya_token, self.google_token]):
             bar_number *= 2
 
         bar = IncrementalBar('Photos_uploading...', max=bar_number)  # sets the progress bar
@@ -236,7 +236,7 @@ class OkDownloader(VkDownloader):
                       f'application_key={self.ok_app_key}',
                       f'fid={self.profile_id}',
                       f'count={number_of_photos}',
-                      f'fields=photo.created_ms, photo.like_count, photo.pic_max, photo.crop_size'
+                      f'fields=photo.created_ms, photo.like_count, photo.pic_max, photo.standard_height, photo.standard_width'
                       ]
 
         sig = md5((''.join(sorted(sig_params)) + self.ok_secret_session_key).encode())
@@ -248,7 +248,7 @@ class OkDownloader(VkDownloader):
             'sig': str(sig),
             'fid': f'{self.profile_id}',
             'count': f'{number_of_photos}',
-            'fields': 'photo.created_ms, photo.like_count, photo.pic_max, photo.crop_size'
+            'fields': 'photo.created_ms, photo.like_count, photo.pic_max, photo.standard_height, photo.standard_width '
         }
 
         self.respond = requests.get('https://api.ok.ru/api/photos/getPhotos', params=param)
@@ -303,7 +303,7 @@ class OkDownloader(VkDownloader):
 
         for photo in self.respond.json()['photos']:
             url = photo['pic_max']
-            size = 'pic_max'
+            size = f'{photo["standard_width"]}x{photo["standard_height"]}'
             if photo['like_count'] in same_likes:  # checks if a date needs to be added to the name
                 file_name = f"{photo['like_count']} - {time.strftime('%d.%b.%Y', time.gmtime(photo['created_ms']/1000))}.jpg"
             else:
@@ -330,7 +330,7 @@ class OkDownloader(VkDownloader):
 
         for photo in self.respond.json()['photos']:
             url = photo['pic_max']
-            size = 'pic_max'
+            size = f'{photo["standard_width"]}x{photo["standard_height"]}'
             if photo['like_count'] in same_likes:  # checks if a date needs to be added to the name
                 file_name = f"{photo['like_count']} - {time.strftime('%d.%b.%Y', time.gmtime(photo['created_ms']/1000))}.jpg"
             else:
@@ -351,16 +351,10 @@ class OkDownloader(VkDownloader):
 
 
 if __name__ == '__main__':
-    user_id = int(input('User_id: '))
-    download = VkDownloader(user_id, ya_token=None, google_token=None)
+    downloader = VkDownloader()
+    downloader.upload_profile_photos_to_cloud_storage()
+    downloader.upload_album_photos_to_cloud_storage()
 
-    download.upload_profile_photos_to_cloud_storage()
-    album_id = int(input('Album_id: '))
-    download.upload_album_photos_to_cloud_storage(album_id)
-
-    user_id = int(input('User_id: '))
-    download = OkDownloader(user_id, ya_token=None, google_token=None)
-
-    download.upload_profile_photos_to_cloud_storage()
-    album_id = int(input('Album_id: '))
-    download.upload_album_photos_to_cloud_storage(album_id)
+    downloader2 = OkDownloader()
+    downloader2.upload_profile_photos_to_cloud_storage()
+    downloader2.upload_album_photos_to_cloud_storage()
