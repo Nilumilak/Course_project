@@ -1,4 +1,3 @@
 /.idea
 /venv
-vk_token.txt
-ok_token.txt
+settings.ini
